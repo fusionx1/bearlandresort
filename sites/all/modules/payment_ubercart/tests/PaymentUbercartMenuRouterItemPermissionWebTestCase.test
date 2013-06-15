@@ -1,0 +1,21 @@
+<?php
+
+class PaymentUbercartMenuRouterItemPermissionWebTestCase extends XtoolsWebTestCase {
+
+  static function getInfo() {
+    return array(
+      'name' => 'Menu router item permissions',
+      'group' => 'Payment for Ubercart',
+      'dependencies' => array('payment_ubercart', 'xtools'),
+    );
+  }
+
+  function setUp(array $modules = array()) {
+    parent::setUp($modules + array('payment_ubercart', 'xtools'));
+  }
+
+  function testPaymentMenuRouterItemPermissions() {
+    // Test the configuration form.
+    $this->XtoolsAssertMenuRouterItemPermission('admin/config/services/payment/payment_ubercart', array('payment_ubercart.administer'));
+  }
+}

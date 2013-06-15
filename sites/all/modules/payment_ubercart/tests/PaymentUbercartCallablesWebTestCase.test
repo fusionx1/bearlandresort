@@ -1,0 +1,20 @@
+<?php
+
+class PaymentUbercartCallablesWebTestCase extends XtoolsWebTestCase {
+
+  static function getInfo() {
+    return array(
+      'name' => 'Callables',
+      'group' => 'Payment for Ubercart',
+      'dependencies' => array('payment_ubercart', 'uc_payment', 'xtools'),
+    );
+  }
+
+  function setUp(array $modules = array()) {
+    parent::setUp($modules+ array('xtools'));
+  }
+
+  function testCallables() {
+    $this->XtoolsAssertCallables(array('payment_ubercart'), array('drupal', 'payment', 'uc_payment', 'views'));
+  }
+}

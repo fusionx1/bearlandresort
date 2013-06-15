@@ -1,0 +1,356 @@
+<?php
+
+/**
+ * @file
+ * Hook implementations and shared functions.
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function payment_ubercart_menu() {
+  $item['admin/config/services/payment/payment_ubercart'] = array(
+    'title' => 'Payment for Ubercart',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('payment_ubercart_form_configuration'),
+    'access arguments' => array('payment_ubercart.administer'),
+  );
+
+  return $item;
+}
+
+/**
+ * Implements hook_permission().
+ */
+function payment_ubercart_permission() {
+  $permissions = array(
+    'payment_ubercart.administer' => array(
+      'title' => t('Administer Payment for Ubercart'),
+    ),
+  );
+
+  return $permissions;
+}
+
+/**
+ * Implements hook_uc_order().
+ */
+function payment_ubercart_uc_order($op, $uc_order, $arg2) {
+  if ($op == 'delete' && variable_get('payment_ubercart_uc_order_delete', FALSE)) {
+    if ($pids = payment_ubercart_pids_load($uc_order->order_id)) {
+      entity_delete_multiple('payment', $pids);
+    }
+  }
+}
+
+/**
+ * Implements hook_uc_payment_method().
+ */
+function payment_ubercart_uc_payment_method() {
+  $uc_payment_methods = array();
+  foreach (entity_load('payment_method') as $payment_method) {
+    if ($payment_method->enabled) {
+      $uc_payment_methods['payment_ubercart_' . $payment_method->pmid] = array(
+        'title' => $payment_method->title_generic,
+        'name' => $payment_method->title_specific,
+        'callback' => 'payment_ubercart_callback',
+        'redirect' => 'payment_ubercart_form_redirect',
+        'checkout' => TRUE,
+        'weight' => 1,
+      );
+    }
+  }
+
+  return $uc_payment_methods;
+}
+
+/**
+ * Implements hook_payment_line_item_info().
+ */
+function payment_ubercart_payment_line_item_info() {
+  return array(
+    new PaymentLineItemInfo(array(
+      'callback' => 'payment_line_item_get_prefixed',
+      'name' => 'payment_ubercart_product',
+      'title' => t('Ubercart products'),
+    )),
+    new PaymentLineItemInfo(array(
+      'callback' => 'payment_line_item_get_prefixed',
+      'name' => 'payment_ubercart_order_balance',
+      'title' => t('Ubercart order balance'),
+    )),
+    new PaymentLineItemInfo(array(
+      'callback' => 'payment_line_item_get_prefixed',
+      'name' => 'payment_ubercart_line_item',
+      'title' => t('Ubercart order line items'),
+    )),
+    new PaymentLineItemInfo(array(
+      'callback' => 'payment_line_item_get_prefixed',
+      'name' => 'payment_ubercart_hook_uc_order_total',
+      'title' => t('Ubercart hook_uc_order() total'),
+    )),
+  );
+}
+
+/**
+ * Implements hook_payment_status_change().
+ */
+function payment_ubercart_payment_status_change(Payment $payment, PaymentStatusItem $previous_status_item) {
+  // Create Ubercart Payment receipt.
+  if (payment_ubercart_order_id_load($payment)) {
+    if (payment_status_is_or_has_ancestor($payment->getStatus()->status, PAYMENT_STATUS_SUCCESS)) {
+      uc_payment_enter($payment->payment_ubercart_uc_order_id, 'payment_ubercart_' . $payment->method->pmid, $payment->totalAmount(TRUE), $payment->uid, NULL, '', $payment->getStatus()->created);
+    }
+  }
+}
+
+/**
+ * Implements hook_payment_pre_execute().
+ */
+function payment_ubercart_payment_pre_execute(Payment $payment) {
+  if (!empty($payment->payment_ubercart_uc_order_id)) {
+    payment_ubercart_order_id_save($payment);
+  }
+}
+
+/**
+ * Implements hook_views_api().
+ */
+function payment_ubercart_views_api() {
+  return array(
+    'api' => '2',
+    'path' => drupal_get_path('module', 'payment_ubercart'),
+  );
+}
+
+/**
+ * Implements Ubercart payment method callback.
+ *
+ * @see payment_ubercart_uc_payment_method()
+ */
+function payment_ubercart_callback($op, &$order, array $form = NULL, array &$form_state = NULL) {
+  // Checkout form display.
+  if ($op == 'cart-details') {
+    $payment = payment_ubercart_payment_create($order);
+
+    // Build the form.
+    $form_state['payment'] = $payment;
+    $form = payment_form_embedded($form_state, $payment, array($payment->method->pmid));
+    unset($form['elements']['payment_method']['#title']);
+    unset($form['elements']['payment_line_items']);
+    unset($form['elements']['payment_status']);
+    return $form['elements'];
+  }
+  // Checkout form submission.
+  elseif ($op == 'cart-process') {
+    $payment = $form_state['payment'];
+    entity_save('payment', $payment);
+    $order_id_save = (bool) $payment->pid;
+    if ($order_id_save) {
+      payment_ubercart_order_id_save($payment);
+    }
+    $order->data['payment_pid'] = $payment->pid;
+  }
+}
+
+/**
+ * Implements Ubercart Payment method "redirect" callback.
+ *
+ * @see payment_ubercart_uc_payment_redirect()
+ */
+function payment_ubercart_form_redirect(array $form, array &$form_state, $uc_order) {
+  $form['payment_ubercart_submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Submit order'),
+    '#submit' => array('payment_ubercart_form_redirect_submit'),
+  );
+
+  return $form;
+}
+
+/**
+ * Implements form submit callback for payment_ubercart_form_redirect().
+ */
+function payment_ubercart_form_redirect_submit(array $form, array &$form_state) {
+  $order = uc_order_load($form_state['build_info']['args'][0]->order_id);
+  $uid_old = $order->uid;
+  uc_cart_complete_sale($order);
+  $payment = entity_load_single('payment', $order->data['payment_pid']);
+  if ($order->uid != $uid_old) {
+    $payment->uid = $order->uid;
+    entity_save('payment', $payment);
+  }
+  $payment->execute();
+}
+
+/**
+ * Implements Payment::finish_callback.
+ *
+ * @return NULL
+ */
+function payment_ubercart_finish(Payment $payment) {
+  if ((payment_status_is_or_has_ancestor($payment->getStatus()->status, PAYMENT_STATUS_SUCCESS))) {
+    drupal_set_message(t('Your payment was successfully completed.'));
+    $_SESSION['uc_checkout'][$_SESSION['cart_order']]['do_complete'] = TRUE;
+  }
+  elseif ((payment_status_is_or_has_ancestor($payment->getStatus()->status, PAYMENT_STATUS_PENDING))) {
+    drupal_set_message(t('Your payment is still being processed.'), 'warning');
+  }
+  else {
+    drupal_set_message(t('Your payment was not completed.'), 'error');
+  }
+  payment_ubercart_order_id_load($payment);
+  if (user_access('view own orders')) {
+    drupal_goto('user/' . $payment->uid . '/orders/' . $payment->payment_ubercart_uc_order_id);
+  }
+  elseif (user_access('view all orders')) {
+    drupal_goto('admin/store/orders/' . $payment->payment_ubercart_uc_order_id);
+  }
+  else {
+    drupal_goto('<front>');
+  }
+}
+
+/**
+ * Load the ID of the Ubercart order a Payment belongs to.
+ *
+ * @param Payment $payment
+ *
+ * @return integer
+ */
+function payment_ubercart_order_id_load(Payment $payment) {
+  if (!isset($payment->payment_ubercart_uc_order_id)) {
+    $payment->payment_ubercart_uc_order_id = db_query("SELECT uc_order_id FROM {payment_ubercart} WHERE pid = :pid", array(
+      ':pid' => $payment->pid,
+    ))->fetchField();
+  }
+
+  return (bool) $payment->payment_ubercart_uc_order_id;
+}
+
+/**
+ * Save the ID of the Ubercart order a Payment belongs to.
+ *
+ * @param Payment $payment
+ *
+ * @return integer
+ *   Either MergeQuery::STATUS_INSERT or MergeQuery::STATUS_UPDATE.
+ */
+function payment_ubercart_order_id_save(Payment $payment) {
+  return db_merge('payment_ubercart')
+    ->key(array(
+      'pid' => $payment->pid,
+    ))
+    ->fields(array(
+      'pid' => $payment->pid,
+      'uc_order_id' => $payment->payment_ubercart_uc_order_id,
+    ))
+    ->execute();
+}
+
+/**
+ * Load the PIDs of the Payments that belong to an Ubercart order.
+ *
+ * @param integer $order_id
+ *
+ * @return array
+ */
+function payment_ubercart_pids_load($order_id) {
+  return db_query("SELECT pid FROM {payment_ubercart} WHERE uc_order_id = :uc_order_id", array(
+    ':uc_order_id' => $order_id,
+  ))->fetchCol();
+}
+
+/**
+ * Implements form build callback for the configuration form.
+ */
+function payment_ubercart_form_configuration(array $form, array &$form_state) {
+  $form['payment_ubercart_uc_order_delete'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('When deleting an Ubercart order, delete its payments as well.'),
+    '#default_value' => variable_get('payment_ubercart_uc_order_delete', FALSE),
+  );
+
+  return system_settings_form($form);
+}
+
+/**
+ * Creates a payment for an order.
+ *
+ * @param object $order
+ *
+ * @return Payment
+ */
+function payment_ubercart_payment_create($order) {
+  // Check for an existing payment;
+  $payment = isset($order->data['payment_pid']) ? entity_load_single('payment', $order->data['payment_pid']) : NULL;
+  $pid = $payment && payment_status_is_or_has_ancestor($payment->getStatus()->status, PAYMENT_STATUS_NEW) ? $payment->pid : 0;
+
+  $pmid = (int) str_replace('payment_ubercart_', '', $order->payment_method);
+  $payment = new Payment(array(
+    'context' => 'payment_ubercart',
+    'currency_code' => $order->currency,
+    'description' => t('Order #!order_id', array(
+      '!order_id' => $order->order_id,
+    )),
+    'finish_callback' => 'payment_ubercart_finish',
+    'method' => entity_load_single('payment_method', $pmid),
+    'payment_ubercart_uc_order_id' => $order->order_id,
+    'pid' => $pid,
+  ));
+
+  // Add orders, line items, and hook_uc_order() totals to the payment as line items.
+  $order->order_total = uc_order_get_total($order);
+  $balance = uc_payment_balance($order);
+  if ($order->order_total == $balance) {
+    foreach ($order->products as $product) {
+      $payment->setLineItem(new PaymentLineItem(array(
+        'amount' => $product->price,
+        'description' => $product->title,
+        'quantity' => $product->qty,
+        'name' => 'payment_ubercart_product_' . $product->nid,
+      )));
+    }
+    if (is_array($order->line_items)) {
+      foreach ($order->line_items as $line_item) {
+        if (_uc_line_item_data($line_item['type'], 'calculated') == TRUE) {
+          $payment->setLineItem(new PaymentLineItem(array(
+            'amount' => $line_item['amount'],
+            'description' => $line_item['title'],
+            'quantity' => 1,
+            'name' => 'payment_ubercart_line_item_' . $line_item['line_item_id'],
+          )));
+        }
+      }
+    }
+    $hook_order_total = 0;
+    foreach (module_implements('uc_order') as $module) {
+      $function = $module . '_uc_order';
+      // $order must be passed by reference.
+      if ($value = $function('total', $order, NULL) && is_numeric($value)) {
+        $hook_order_total += $value;
+      }
+    }
+    if ($hook_order_total) {
+      $payment->setLineItem(new PaymentLineItem(array(
+        'amount' => $hook_order_total,
+        'description' => 'Other',
+        'quantity' => 1,
+        'name' => 'payment_ubercart_hook_uc_order_total_' , $order->order_id,
+      )));
+    }
+  }
+  else {
+    $payment->setLineItem(new PaymentLineItem(array(
+      'amount' => $balance,
+      'description' => 'Order !order_id',
+      'description_arguments' => array(
+        '!order_id' => $order->order_id,
+      ),
+      'quantity' => 1,
+      'name' => 'payment_ubercart_order_balance_' , $order->order_id,
+    )));
+  }
+
+  return $payment;
+}

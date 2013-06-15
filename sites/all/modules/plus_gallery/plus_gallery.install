@@ -1,0 +1,237 @@
+<?php
+
+/**
+ * @file
+ * Install, update, and requirements functions for the Plus Gallery module.
+ */
+
+/**
+ * Implements hook_requirements().
+ */
+function plus_gallery_requirements($phase) {
+  $requirements = array();
+  if ($phase == 'runtime') {
+    $plusgallery = libraries_load('plusgallery');
+    $t = get_t();
+    if (!$plusgallery['loaded']) {
+      $requirements['plusgallery'] = array(
+        'title' => '+Gallery',
+        'value' => $plusgallery['error message'],
+        'description' => $t('The +Gallery library can be downloaded <a href="@url" title="Download +Gallery" target="_blank">here</a>.',
+          array('@url' => $plusgallery['download url'])),
+        'severity' => REQUIREMENT_ERROR,
+      );
+    }
+    else {
+      $requirements['plusgallery'] = array(
+        'title' => '+Gallery',
+        'value' => $t('Found +Gallery library'),
+        'severity' => REQUIREMENT_OK,
+      );
+    }
+  }
+
+  return $requirements;
+}
+
+/**
+ * Implements hook_field_schema().
+ */
+function plus_gallery_field_schema($field) {
+  return array(
+    'columns' => array(
+      'data_type' => array(
+        'type' => 'int',
+        'size' => 'tiny',
+        'not null' => TRUE,
+        'unsigned' => TRUE,
+        'default' => 0,
+      ),
+      'userid' => array(
+        'type' => 'varchar',
+        'length' => 63,
+        'not null' => FALSE,
+      ),
+      'album_title' => array(
+        'type' => 'int',
+        'size' => 'tiny',
+        'not null' => FALSE,
+        'unsigned' => TRUE,
+        'default' => 0,
+      ),
+      'incl_excl' => array(
+        'type' => 'int',
+        'size' => 'tiny',
+        'not null' => FALSE,
+        'unsigned' => TRUE,
+        'default' => 0,
+      ),
+      'data_incl_excl' => array(
+        'type' => 'text',
+        'size' => 'medium',
+        'not null' => FALSE,
+      ),
+      'album_limit' => array(
+        'type' => 'int',
+        'size' => 'tiny',
+        'not null' => FALSE,
+        'unsigned' => TRUE,
+      ),
+      'album_id' => array(
+        'type' => 'varchar',
+        'length' => 63,
+        'not null' => FALSE,
+      ),
+      'data_limit' => array(
+        'type' => 'int',
+        'size' => 'tiny',
+        'not null' => FALSE,
+        'unsigned' => TRUE,
+      ),
+      'access_token' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => FALSE,
+      ),
+      'api_key' => array(
+        'type' => 'varchar',
+        'length' => 63,
+        'not null' => FALSE,
+      ),
+    ),
+  );
+}
+
+/**
+ * Returns all fields created on the system of the type defined in mymodule.
+ *
+ * @return array
+ *   Array containing all the Plus Gallery fields.
+ */
+function _plus_gallery_get_fields() {
+  $types = array_keys(plus_gallery_field_info());
+  $fields = array();
+  foreach (field_info_fields() as $field) {
+    if (in_array($field['type'], $types)) {
+      $fields[] = $field;
+    }
+  }
+  return $fields;
+}
+
+/**
+ * Add a column to the tables of the fields created with this module.
+ * 
+ * @param string $column_name
+ *   The name of the column that needs to be added.
+ * @param array $spec
+ *   The array containing the specs that define the column.
+ */
+function _plus_gallery_add_column($column_name, $spec) {
+  $fields = _plus_gallery_get_fields();
+  foreach ($fields as $field) {
+    $data_table_name = 'field_data_' . $field['field_name'];
+    $revision_table_name = 'field_revision_' . $field['field_name'];
+    $field_name = $field['field_name'] . '_' . $column_name;
+
+    db_add_field($data_table_name, $field_name, $spec);
+    db_add_field($revision_table_name, $field_name, $spec);
+  }
+}
+
+/**
+ * Make {data_type} and {data_limit} unsigned.
+ */
+function plus_gallery_update_7100(&$sandbox) {
+  $fields = _plus_gallery_get_fields();
+  foreach ($fields as $field) {
+    $tables = array(
+      _field_sql_storage_tablename($field),
+      _field_sql_storage_revision_tablename($field),
+    );
+
+    $spec1 = array(
+      'type' => 'int',
+      'size' => 'tiny',
+      'not null' => TRUE,
+      'unsigned' => TRUE,
+      'default' => 0,
+    );
+    $spec2 = array(
+      'type' => 'int',
+      'size' => 'tiny',
+      'not null' => FALSE,
+      'unsigned' => TRUE,
+    );
+
+    foreach ($tables as $table) {
+      $field_name = $field['field_name'];
+
+      $column1 = $field_name . '_data_type';
+      $column2 = $field_name . '_data_limit';
+
+      db_change_field($table, $column1, $column1, $spec1);
+      db_change_field($table, $column2, $column2, $spec2);
+    }
+  }
+}
+
+/**
+ * Add {album_title} and {album_limit} columns.
+ */
+function plus_gallery_update_7101(&$sandbox) {
+  $spec = array(
+    'type' => 'int',
+    'size' => 'tiny',
+    'not null' => FALSE,
+    'unsigned' => TRUE,
+  );
+
+  _plus_gallery_add_column('album_title', $spec);
+  _plus_gallery_add_column('album_limit', $spec);
+}
+
+/**
+ * Add {incl_excl} and {data_incl_excl} columns.
+ */
+function plus_gallery_update_7102(&$sandbox) {
+  $spec1 = array(
+    'type' => 'int',
+    'size' => 'tiny',
+    'not null' => FALSE,
+    'unsigned' => TRUE,
+    'default' => 0,
+  );
+  $spec2 = array(
+    'type' => 'text',
+    'size' => 'medium',
+    'not null' => FALSE,
+  );
+
+  _plus_gallery_add_column('incl_excl', $spec1);
+  _plus_gallery_add_column('data_incl_excl', $spec2);
+}
+
+/**
+ * Remove variables {plus_gallery_location} and {plus_gallery_credit}.
+ */
+function plus_gallery_update_7103(&$sandbox) {
+  variable_del('plus_gallery_location');
+  variable_del('plus_gallery_credit');
+}
+
+/**
+ * Change length of {access_token} from 63 to 255, for Facebooks access token. 
+ */
+function plus_gallery_update_7104(&$sandbox) {
+  $fields = _plus_gallery_get_fields();
+  $spec = array('type' => 'varchar', 'length' => 255, 'not null' => FALSE);
+  foreach ($fields as $field) {
+    $data_table_name = 'field_data_' . $field['field_name'];
+    $revision_table_name = 'field_revision_' . $field['field_name'];
+    $field_name = $field['field_name'] . '_access_token';
+
+    db_change_field($data_table_name, $field_name, $field_name, $spec);
+    db_change_field($revision_table_name, $field_name, $field_name, $spec);
+  }
+}
