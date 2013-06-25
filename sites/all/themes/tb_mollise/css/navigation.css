@@ -54,6 +54,11 @@ a:focus {
   font-weight: bold;
 }
 
+body.page-homepage .block ul.menu {
+  font-weight: bold;
+  background-color: #C5B36A;
+}
+
 .block ul.menu ul {
   font-weight: normal;
 }
@@ -72,7 +77,7 @@ ul.menu li.leaf {
 
 .block ul.menu li a {
   background: url(../images/plus.png) 0 1em no-repeat;  
-  color: #aaa;
+  color: #fff;
   display: block;
   padding: 0.5em 1.166em;
 }

@@ -4,20 +4,47 @@ html {
   font-size: 62.5%; /* Change base font-size to 10px. */
 }
 
-body {
+
+html { 
+  background: url("../images/bodybg6.jpg") no-repeat center center fixed; 
+  -webkit-background-size: cover;
+  -moz-background-size: cover;
+  -o-background-size: cover;
+  background-size: cover;
+}
+
+/*
+body.page-homepage {
   #background: #1c1e1e;
   #color: #949494;
-  #line-height: 1.5; /* Unit-less line-height means line height can scale. */
+  #line-height: 1.5; 
     background-attachment: scroll;
     background-clip: border-box;
     background-color: #2A2523;
-    background-image: url("../images/newbg.png");
+    background-image: url("../images/bodybg6.jpg");
     background-origin: padding-box;
     background-position: 0 0;
-    background-repeat: repeat;
+    background-repeat: no-repeat;
     background-size: auto auto;
     color: #AF987C;
 }
+
+
+body{
+  #background: #1c1e1e;
+  #color: #949494;
+  #line-height: 1.5; 
+    background-attachment: scroll;
+    background-clip: border-box;
+    background-color: #2A2523;
+    background-image: url("../images/newbg3.png");
+    background-origin: padding-box;
+    background-position: 0 0;
+    background-repeat: no-repeat;
+    background-size: auto auto;
+    color: #AF987C;
+}
+*/
 
 /* Headings */
 h1 {
